@@ -178,7 +178,7 @@ async function signalFromPc1(pc, event) {
   const remotePort = 4404; // server listens on 4404 and 4405 respectively
   if (!addedTo2) {
     addedTo2 = true;
-    pc2.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcpType active'});
+    pc2.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcptype passive'});
   }
 }
 
@@ -187,7 +187,7 @@ async function signalFromPc2(pc, event) {
   const remotePort = 4405; // server listens on 4404 and 4405 respectively
   if (!addedTo1) {
     addedTo1 = true;
-    pc1.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcpType active'});
+    pc1.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcptype passive'});
   }
 }
 
