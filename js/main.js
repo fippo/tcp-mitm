@@ -173,12 +173,14 @@ async function onCreateAnswerSuccess(desc) {
 
 let addedTo1 = false;
 let addedTo2 = false;
+const TYPE = 'tcp'; // use tcp with server.js, udp with udp.js
+const HOST = TYPE === 'tcp' ? 'localhost' : '127.0.0.1';
 // signal from attacker to victim
 async function signalFromPc1(pc, event) {
   const remotePort = 4404; // server listens on 4404 and 4405 respectively
   if (!addedTo2) {
     addedTo2 = true;
-    pc2.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcptype passive'});
+    pc2.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 ' + HOST + ' ' + remotePort + ' typ host' + (TYPE === 'tcp' ? ' tcptype passive' : '')});
   }
 }
 
@@ -187,7 +189,7 @@ async function signalFromPc2(pc, event) {
   const remotePort = 4405; // server listens on 4404 and 4405 respectively
   if (!addedTo1) {
     addedTo1 = true;
-    pc1.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 localhost ' + remotePort + ' typ host tcptype passive'});
+    pc1.addIceCandidate({sdpMLineIndex: 0, candidate: 'candidate:0 1 tcp 1350566143 ' + HOST + ' ' + remotePort + ' typ host' + (TYPE === 'tcp' ? ' tcptype passive' : '')});
   }
 }
 

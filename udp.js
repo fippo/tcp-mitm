@@ -1,8 +1,6 @@
 // udp variant of the MITM. Easier since it always gets full udp packets
 // without framing.
-// To use, replace 'tcp' with 'udp' in the injected candidate,
-// 'localhost' with 127.0.0.1 (which is a bit odd) or the address used below
-// and remove tcptype.
+// To use, set TYPE to 'udp' in javascript and replace HOST with the address below.
 const dgram = require('dgram');
 const net = require('net');
 
