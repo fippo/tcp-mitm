@@ -1,0 +1,94 @@
+<html>
+<head>
+<meta charset="utf-8">
+<script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script src="https://rawgit.com/otalk/sdp/master/sdp.js"></script>
+<script src="https://webrtc.github.io/samples/src/js/third_party/graph.js"></script>
+<style>
+video {
+  width: 320px;
+}
+</style>
+</head>
+<body>
+<div id="local">
+  <h2>Local Video</h2>
+</div>
+<div id="remotes">
+  <h2>Remote Videos</h2>
+</div>
+<script>
+// Show a stream and draw graphs.
+function show(stream, isRemote) {
+    const id = isRemote ? stream.id : 'local';
+
+    const container = document.createElement('div');
+    container.id = id + 'Container';
+    document.getElementById(isRemote ? 'remotes' : 'local').appendChild(container);
+
+    const v = document.createElement('video');
+    v.autoplay = true;
+    v.srcObject = stream;
+    v.onresize = () => v.title = 'video dimensions: ' + v.videoWidth + 'x' + v.videoHeight;
+    container.appendChild(v);
+}
+const pc1 = new RTCPeerConnection({sdpSemantics: 'unified-plan'});
+const pc2 = new RTCPeerConnection({sdpSemantics: 'unified-plan'});
+pc1.onicecandidate = (e) => pc2.addIceCandidate(e.candidate);
+pc2.onicecandidate = (e) => {
+    if (e.candidate && e.candidate.sdpMLineIndex > 1) return;
+    pc1.addIceCandidate(e.candidate);
+};
+pc2.ontrack = e => e.track.kind === 'video' && show(e.streams[0], true);
+
+const rids = [0, 1, 2];
+navigator.mediaDevices.getUserMedia({audio: true, video: {width: 1280, height: 720}})
+.then((stream) => {
+    stream.getTracks().forEach(t => pc1.addTrack(t, stream));
+    show(stream);
+    return pc1.createOffer();
+})
+.then((offer) => {
+    const sections = SDPUtils.splitSections(offer.sdp);
+    const dtls = SDPUtils.getDtlsParameters(sections[1], sections[0]);
+    const ice = SDPUtils.getIceParameters(sections[1], sections[0]);
+    const rtpParameters = SDPUtils.parseRtpParameters(sections[2]);
+
+    let sdp = SDPUtils.writeSessionBoilerplate() +
+      // 'a=group:BUNDLE 0 1 2\r\n' + we do *not* want to bundle
+      'a=msid-semantic:WMS *\r\n';
+    sdp += sections[1]; // copy audio
+    sdp += sections[2]; // copy video
+    const codecs = SDPUtils.writeRtpDescription('video', rtpParameters);
+    for (let mid = 2; mid < 5; mid++) {
+      sdp += codecs +
+          SDPUtils.writeDtlsParameters(dtls, 'actpass') +
+          SDPUtils.writeIceParameters(ice) +
+          'a=setup:actpass\r\n' +
+          'a=mid:' + mid + '\r\n' +
+          'a=msid:' + mid + ' video\r\n';
+    }
+    return Promise.all([
+        pc1.setLocalDescription(offer),
+        pc2.setRemoteDescription({
+            type: 'offer',
+            sdp,
+        }),
+    ]);
+})
+.then(() => pc2.createAnswer())
+.then(answer => {
+    const sections = SDPUtils.splitSections(answer.sdp);
+    const sdp = sections.splice(0, 3).join('');
+    return Promise.all([
+        pc2.setLocalDescription(answer),
+        pc1.setRemoteDescription({
+            type: 'answer',
+            sdp
+        }),
+    ]);
+})
+.catch(e => console.error(e));
+</script>
+</body>
+</html>
